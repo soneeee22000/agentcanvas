@@ -1,0 +1,21 @@
+{
+  "name": "agentcanvas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Vue 3 + VueFlow studio for composing and observing agentic workflows.",
+  "type": "module",
+  "workspaces": [
+    "web",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,server -c blue,green \"npm:dev:web\" \"npm:dev:server\"",
+    "dev:web": "npm run dev -w web",
+    "dev:server": "npm run dev -w server",
+    "build": "npm run build -w server && npm run build -w web",
+    "typecheck": "npm run typecheck -w web && npm run typecheck -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
