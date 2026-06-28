@@ -1,8 +1,16 @@
 # AgentCanvas
 
+![Vue 3](https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Last commit](https://img.shields.io/github/last-commit/soneeee22000/agentcanvas)
+
 A Vue 3 + VueFlow studio for **composing and observing agentic workflows**. Add agent, tool, and knowledge-graph nodes to a canvas, wire them together, tune each node in the inspector, then run the workflow and watch every node _think_ — each reasoning step streams in live and is grounded with citations, so the model's "thought process" is transparent instead of a black box.
 
 Built to mirror the real shape of an agentic platform: a **graph- and canvas-heavy frontend** over an **event-streaming Node.js + TypeScript backend**, joined by **explicit schema contracts**.
+
+![AgentCanvas — composing an agentic workflow on the canvas with a live reasoning trace](docs/screenshot.png)
 
 ## Stack
 
@@ -53,3 +61,7 @@ agentcanvas/
       ├─ lib/               # SSE client + node catalog
       └─ types/workflow.ts  # client mirror of the schema contracts
 ```
+
+## License
+
+[MIT](LICENSE) © Pyae Sone (Seon) — [github.com/soneeee22000](https://github.com/soneeee22000)
