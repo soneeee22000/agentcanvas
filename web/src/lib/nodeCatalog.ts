@@ -35,7 +35,8 @@ export const NODE_CATALOG: Record<NodeKind, NodeKindMeta> = {
   knowledge: {
     kind: "knowledge",
     label: "Knowledge",
-    description: "Retrieves grounded snippets from the knowledge graph.",
+    description:
+      "Seeds by keyword, then expands 1 hop over the knowledge graph.",
     icon: Database,
     accent: "knowledge",
   },

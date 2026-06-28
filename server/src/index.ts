@@ -6,9 +6,20 @@ import { runWorkflow } from "./agent/loop.js";
 import { RunEvent, RunRequest } from "./agent/schema.js";
 
 const DEFAULT_PORT = 8787;
+// Demo default is the Vite dev origin; set CORS_ORIGIN (comma-separated, or "*")
+// to widen it. Avoids a blanket wildcard in the committed code.
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:5173";
 
 const app = new Hono();
-app.use("/api/*", cors());
+app.use(
+  "/api/*",
+  cors({
+    origin:
+      CORS_ORIGIN === "*"
+        ? "*"
+        : CORS_ORIGIN.split(",").map((value) => value.trim()),
+  }),
+);
 
 app.get("/api/health", (context) =>
   context.json({

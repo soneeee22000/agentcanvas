@@ -17,7 +17,7 @@ const sleep = (ms: number): Promise<void> =>
  * Order nodes so every node runs after the nodes feeding into it (Kahn's algorithm).
  * Falls back to declaration order for any nodes left in a cycle.
  */
-function topoOrder(graph: WorkflowGraph): WorkflowNode[] {
+export function topoOrder(graph: WorkflowGraph): WorkflowNode[] {
   const indegree = new Map<string, number>(
     graph.nodes.map((node) => [node.id, 0]),
   );
@@ -45,9 +45,15 @@ function topoOrder(graph: WorkflowGraph): WorkflowNode[] {
   return [...ordered, ...graph.nodes.filter((node) => !seen.has(node.id))];
 }
 
-/** Stream a real Claude completion, forwarding text deltas to `onDelta`. */
+/**
+ * Stream a real Claude completion, forwarding text deltas to `onDelta`.
+ * The node's prompt is sent as the Anthropic `system` instruction (so editing
+ * it in the inspector genuinely steers the model), with the upstream context as
+ * the user turn.
+ */
 async function streamClaude(
-  prompt: string,
+  system: string,
+  userContent: string,
   onDelta: (text: string) => void,
 ): Promise<string> {
   const response = await fetch(ANTHROPIC_URL, {
@@ -61,7 +67,8 @@ async function streamClaude(
       model: process.env.AGENTCANVAS_MODEL ?? DEFAULT_MODEL,
       max_tokens: MAX_TOKENS,
       stream: true,
-      messages: [{ role: "user", content: prompt }],
+      system,
+      messages: [{ role: "user", content: userContent }],
     }),
   });
   if (!response.ok || !response.body) {
@@ -89,7 +96,7 @@ async function streamClaude(
 }
 
 /** Pull the text out of one Anthropic SSE `data:` line, if it carries a content delta. */
-function parseDelta(line: string): string | null {
+export function parseDelta(line: string): string | null {
   if (!line.startsWith("data:")) return null;
   const payload = line.slice("data:".length).trim();
   if (!payload || payload === "[DONE]") return null;
@@ -134,8 +141,9 @@ async function runAgentNode(
   emit: Emit,
 ): Promise<string> {
   if (!process.env.ANTHROPIC_API_KEY) return mockReason(node, context, emit);
-  const prompt = `${node.config.prompt ?? "You are a step in an agentic workflow."}\n\nContext:\n${context}`;
-  return streamClaude(prompt, (delta) =>
+  const system =
+    node.config.prompt?.trim() || "You are a step in an agentic workflow.";
+  return streamClaude(system, `Context:\n${context}`, (delta) =>
     emit({ type: "thought", nodeId: node.id, text: delta }),
   );
 }
