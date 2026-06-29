@@ -30,6 +30,37 @@ Built to mirror the real shape of an agentic platform: a **graph- and canvas-hea
 - **Real graph retrieval (`server/src/agent/tools.ts`).** The knowledge node holds a small graph of typed, directed edges; retrieval seeds by keyword then expands one hop to return a connected subgraph (each hop tagged with its relation), not isolated chunks.
 - **Runs with zero setup.** No API key → a deterministic mock agent streams scripted reasoning + grounded snippets, so the canvas is fully demoable offline and at no cost. Add a key to swap in real Claude streaming.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Web["web · Vue 3 + VueFlow"]
+    Palette[Node palette] --> Canvas[Workflow canvas]
+    Canvas --> Inspector[Inspector]
+    RunBtn[Run panel] --> Trace[Live reasoning + citations]
+  end
+
+  subgraph Contracts["server/agent/schema.ts · Zod"]
+    SC[(workflow · RunEvent)]
+  end
+
+  subgraph Server["server · Node + TypeScript · Hono"]
+    Loop[Topological run loop]
+    Tools[Knowledge-graph retrieval]
+  end
+
+  Web <-->|SSE · /api/run · typed by| Contracts
+  Contracts <--> Server
+  Loop --> Tools
+  Loop -->|node system prompt| Model[Claude streaming · or deterministic mock]
+```
+
+Per run, the loop walks the workflow in dependency order and streams each node's reasoning to the canvas:
+
+```
+topological order ─▶ per node: build prompt ─▶ retrieve 1-hop subgraph ─▶ stream reasoning + citations
+```
+
 ## Run it
 
 ```bash
@@ -63,6 +94,24 @@ agentcanvas/
       ├─ lib/               # SSE client + node catalog
       └─ types/workflow.ts  # client mirror of the schema contracts
 ```
+
+## Scripts
+
+| Script              | What it does                                       |
+| ------------------- | -------------------------------------------------- |
+| `npm run dev`       | Web on `:5173` + server on `:8787` (concurrently)  |
+| `npm run build`     | Type-check + build the server, then the web bundle |
+| `npm run typecheck` | Strict type-check both workspaces, no emit         |
+| `npm test`          | Vitest unit suite (`server/src/agent`)             |
+
+## Quality gates
+
+- **10 Vitest unit tests** covering the parts most likely to break silently:
+  topological execution order (including cycle safety), SSE delta parsing
+  (`parseDelta` — partial frames, `[DONE]`, malformed JSON), and knowledge-graph
+  retrieval (keyword seed, one-hop expansion, neighbour scoring, never-empty).
+- **TypeScript strict** across both workspaces.
+- **GitHub Actions CI** runs type-check → test → build on every push.
 
 ## License
 
