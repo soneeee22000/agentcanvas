@@ -13,10 +13,13 @@
     "dev:web": "npm run dev -w web",
     "dev:server": "npm run dev -w server",
     "build": "npm run build -w server && npm run build -w web",
-    "typecheck": "npm run typecheck -w web && npm run typecheck -w server",
-    "test": "npm run test -w server"
+    "typecheck": "npm run typecheck -w web && npm run typecheck -w server && npm run typecheck:api",
+    "test": "npm run test -w server",
+    "typecheck:api": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "@types/node": "^22.20.4",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.9.3"
   }
 }
