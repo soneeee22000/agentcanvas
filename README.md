@@ -14,7 +14,7 @@ A Vue 3 + VueFlow studio for composing agentic workflows on a canvas and watchin
 
 [Why this exists](docs/WHY.md) · [Recorded mock run](docs/mock-run.sse) · [Run it locally](#getting-started)
 
-There is no hosted demo. The app runs locally with no API key: a deterministic mock stands in for the model. The screenshot shows the canvas before a run, and the recorded run comes from mock mode, not from Claude.
+There is no hosted demo yet. A keyless Vercel deploy is prepared and checked locally ([docs/DEPLOY.md](docs/DEPLOY.md)) but not published. The app runs locally with no API key: a deterministic mock stands in for the model. The screenshot shows the canvas before a run, and the recorded run comes from mock mode, not from Claude.
 
 ## Why this exists
 
@@ -79,9 +79,11 @@ It does **not** do conditional branching, parallel fan-out, retries, timeouts, c
 What the repo can show today, all reproducible locally:
 
 - **Recorded mock run: [`docs/mock-run.sse`](docs/mock-run.sse).** The raw SSE stream from `POST /api/run` for the starter workflow (knowledge graph, reasoner, answer) with no API key: 14 events, from `run_started` through `tool_call` and `tool_result` (4 citations, two of them one-hop neighbours) to `run_completed`. The mock's "thoughts" are scripted, not model output.
-- **14 Vitest tests in 2 files**, all passing locally (CI runs them on every push):
+- **32 Vitest tests in 4 files**, all passing locally (CI runs them on every push):
   - `server/src/agent/agent.test.ts` (10): topological order and the cycle fallback, SSE delta parsing (`parseDelta`: content deltas, `[DONE]`, other event types, malformed JSON), and graph retrieval (keyword seed first, one-hop expansion, neighbours scored below seeds, never empty, undirected traversal).
   - `server/src/agent/runWorkflow.test.ts` (4): with the Anthropic API stubbed at `fetch`, the agent after a retrieval node is sent both the question and the snippets; an agent with no incoming edge gets the question and none of the snippets; retrieval downstream of an agent still queries with the question; and a mock-mode run emits the full event sequence.
+  - `server/src/guards.test.ts` (11): the per-IP fixed-window rate limiter (limit, retry delay, separate clients, window reset, eviction), client IP extraction, and the node, edge and question caps.
+  - `server/src/app.test.ts` (7): through the HTTP app, a mock run streams SSE from `run_started` to `run_completed`; oversized bodies get 413, oversized graphs 422, malformed requests 400; the rate limit returns 429 with `Retry-After` per IP; the health check is not rate-limited.
 
 The first three `runWorkflow` tests were written before the fix and failed against the previous runner, which overwrote one rolling context string at every node. The retrieval step replaced the question with its snippets, so with a real key the agent was told to answer a question it never received.
 
@@ -101,8 +103,8 @@ Open http://localhost:5173, edit the question in the toolbar, and press **Run wo
 | ------------------- | --------------------------------------------------- |
 | `npm run dev`       | Web on `:5173` and server on `:8787` (concurrently) |
 | `npm run build`     | Type-check and build the server, then the web app   |
-| `npm run typecheck` | Strict type-check of both workspaces, no emit       |
-| `npm test`          | Vitest suite (`server/src/agent`)                   |
+| `npm run typecheck` | Strict type-check of both workspaces and `api/`, no emit |
+| `npm test`          | Vitest suite (`server/src`)                         |
 
 CI (`.github/workflows/ci.yml`) runs install, type-check, test and build on every push.
 
@@ -110,9 +112,12 @@ CI (`.github/workflows/ci.yml`) runs install, type-check, test and build on ever
 
 ```
 agentcanvas/
+├─ api/                         # Vercel Functions: run.ts, health.ts (both export createApp())
 ├─ server/                      # Node.js + TypeScript agent backend
 │  └─ src/
-│     ├─ index.ts               # Hono app: /api/health, /api/run (SSE)
+│     ├─ app.ts                 # Hono app: /api/health, /api/run (SSE), guards wired in
+│     ├─ guards.ts              # per-IP rate limit, body/graph/question caps
+│     ├─ index.ts               # local Node server for the app
 │     └─ agent/
 │        ├─ schema.ts           # Zod contracts (source of truth)
 │        ├─ tools.ts            # demo knowledge graph + seed/1-hop retrieval
@@ -125,7 +130,7 @@ agentcanvas/
 │     ├─ stores/workflow.ts     # Pinia: graph, selection, run orchestration
 │     ├─ lib/                   # SSE client, node catalog
 │     └─ types/workflow.ts      # client mirror of the contracts
-└─ docs/                        # WHY.md, screenshot, recorded mock run
+└─ docs/                        # WHY.md, DEPLOY.md, screenshot, recorded mock run
 ```
 
 ## Limitations
@@ -133,12 +138,12 @@ agentcanvas/
 - The knowledge graph is 4 hard-coded nodes and 4 edges, matched by keyword. It shows the shape of graph retrieval, not its quality, and there is no retrieval benchmark.
 - Mock mode is scripted and does not read its context the way a model does. The live Claude path is covered by a stubbed-`fetch` test, not by a recorded run against the real API.
 - Workflows are not persisted. Reloading the page resets the canvas to the starter graph.
-- No hosted deployment. The server's CORS default is the local Vite origin.
+- No hosted deployment yet. The rate limit is in memory, so on serverless it holds per instance, not globally. The server's CORS default is the local Vite origin.
 - The web UI has no automated tests; the suite covers the server.
 
 ## Roadmap
 
-- A keyless public deployment of the web app and the mock server.
+- Publish the keyless deployment prepared in [docs/DEPLOY.md](docs/DEPLOY.md).
 - Reject or highlight cycles on the canvas instead of silently running them once.
 - A recorded live run (with its cost) alongside the mock run.
 - Component tests for the Pinia store's event handling.
