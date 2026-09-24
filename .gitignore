@@ -5,3 +5,10 @@ dist/
 .env
 .env.local
 .DS_Store
+.vercel/
+
+# AI tool working directories
+.claude/
+.sixth/
+.cursor/
+CLAUDE.md
