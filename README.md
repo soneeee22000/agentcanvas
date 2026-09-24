@@ -1,118 +1,152 @@
 # AgentCanvas
 
-![CI](https://img.shields.io/github/actions/workflow/status/soneeee22000/agentcanvas/ci.yml?label=CI)
-![Vue 3](https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
-![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
-![Last commit](https://img.shields.io/github/last-commit/soneeee22000/agentcanvas)
+A Vue 3 + VueFlow studio for composing agentic workflows on a canvas and watching each step stream its reasoning, tool calls and citations.
 
-A Vue 3 + VueFlow studio for **composing and observing agentic workflows**. Add agent, tool, and knowledge-graph nodes to a canvas, wire them together, tune each node in the inspector, then run the workflow and watch every node _think_ — each reasoning step streams in live and is grounded with citations, so the model's "thought process" is transparent instead of a black box.
+[![CI](https://img.shields.io/github/actions/workflow/status/soneeee22000/agentcanvas/ci.yml?label=CI)](https://github.com/soneeee22000/agentcanvas/actions/workflows/ci.yml)
+[![Vue 3](https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white)](web/package.json)
+[![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](server/tsconfig.json)
+[![Vitest](https://img.shields.io/badge/tested_with-Vitest-6E9F18?logo=vitest&logoColor=white)](server/vitest.config.ts)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)](.github/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/soneeee22000/agentcanvas)](https://github.com/soneeee22000/agentcanvas/commits/main)
 
-Built to mirror the real shape of an agentic platform: a **graph- and canvas-heavy frontend** over an **event-streaming Node.js + TypeScript backend**, joined by **explicit schema contracts**.
+![AgentCanvas: the starter workflow (knowledge graph, reasoner, answer) on the canvas before a run](docs/screenshot.png)
 
-![AgentCanvas — composing an agentic workflow on the canvas with a live reasoning trace](docs/screenshot.png)
+[Why this exists](docs/WHY.md) · [Recorded mock run](docs/mock-run.sse) · [Run it locally](#getting-started)
 
-## Stack
+There is no hosted demo. The app runs locally with no API key: a deterministic mock stands in for the model. The screenshot shows the canvas before a run, and the recorded run comes from mock mode, not from Claude.
 
-| Layer    | Tech                                                                                                                     |
-| -------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Frontend | **Vue 3 (Composition API, `<script setup>`)**, **TypeScript (strict)**, **VueFlow**, Pinia, Tailwind v4, Lucide          |
-| Backend  | **Node.js + TypeScript**, Hono, **Zod** schema contracts, Server-Sent Events                                             |
-| Agent    | Topological node execution, streaming reasoning + citations; real **Anthropic Claude** streaming or a deterministic mock |
+## Why this exists
 
-## Why it's built this way
+A multi-step agent is hard to debug when you only see its final answer. Retrieval can return the wrong passages, a step can drop part of the request, or the model can answer without using what it was given, and each of those still produces fluent text. AgentCanvas makes every step visible: each node reports when it starts, which tool it called with which arguments, what came back, and what it passed on, as typed events streamed to the canvas. The full argument is in [docs/WHY.md](docs/WHY.md).
 
-- **Schema contracts (`server/src/agent/schema.ts`)** are the single source of truth for the language agents and humans speak — the workflow graph shape and the discriminated-union `RunEvent` stream. The Vue app mirrors these types.
-- **The agent loop never touches the transport.** `runWorkflow` emits typed events into a sink; the HTTP layer drains them onto an in-order SSE channel so fast live-streaming deltas can't interleave.
-- **One custom VueFlow node, catalog-driven.** Node kinds are data (`lib/nodeCatalog.ts`), not four copy-pasted components.
-- **Select a node to edit it.** The inspector edits a node's label and an agent's system prompt; the prompt is sent to Claude as the real `system` instruction (and is reflected in the mock too), so the control isn't cosmetic.
-- **Real graph retrieval (`server/src/agent/tools.ts`).** The knowledge node holds a small graph of typed, directed edges; retrieval seeds by keyword then expands one hop to return a connected subgraph (each hop tagged with its relation), not isolated chunks.
-- **Runs with zero setup.** No API key → a deterministic mock agent streams scripted reasoning + grounded snippets, so the canvas is fully demoable offline and at no cost. Add a key to swap in real Claude streaming.
+## What it solves
+
+| Layer         | Problem                                                           | How AgentCanvas answers it                                                                                                                           |
+| ------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Canvas**    | The structure of a workflow lives in code and is hard to see.     | Nodes and edges are edited in a VueFlow canvas. Edges set execution order and decide which outputs each node receives.                               |
+| **Contracts** | The UI and the server drift apart and the stream becomes untyped. | Zod schemas (`server/src/agent/schema.ts`) define the graph, the run request and a discriminated-union `RunEvent`. The web app mirrors the types.    |
+| **Runner**    | A step can silently lose the user's request.                      | One topological pass. Each node receives the original question plus the outputs of the nodes wired into it.                                          |
+| **Retrieval** | Isolated chunks lose the relations between facts.                 | Graph-shaped retrieval over a 4-node demo graph: keyword seeds, then a one-hop expansion along typed edges, each neighbour tagged with its relation. |
+| **Transport** | Fast token deltas can interleave on the wire.                     | The runner only emits into a sink. The HTTP layer drains an in-order queue onto Server-Sent Events, one `RunEvent` per frame.                        |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph Web["web · Vue 3 + VueFlow"]
-    Palette[Node palette] --> Canvas[Workflow canvas]
-    Canvas --> Inspector[Inspector]
-    RunBtn[Run panel] --> Trace[Live reasoning + citations]
+  subgraph Web["web: Vue 3 + VueFlow + Pinia"]
+    Palette["Node palette"] --> Canvas["Workflow canvas"]
+    Canvas --> Inspector["Inspector: label, system prompt"]
+    RunBtn["Run panel"] --> Trace["Live reasoning + citations"]
   end
 
-  subgraph Contracts["server/agent/schema.ts · Zod"]
-    SC[(workflow · RunEvent)]
+  subgraph Contracts["server/src/agent/schema.ts (Zod)"]
+    SC[("WorkflowGraph, RunRequest, RunEvent")]
   end
 
-  subgraph Server["server · Node + TypeScript · Hono"]
-    Loop[Topological run loop]
-    Tools[Knowledge-graph retrieval]
+  subgraph Server["server: Node + TypeScript + Hono"]
+    Loop["runWorkflow: topological pass"]
+    Tools["knowledge_graph_search: seed + 1-hop"]
   end
 
-  Web <-->|SSE · /api/run · typed by| Contracts
+  Web <-->|"POST /api/run, SSE stream"| Contracts
   Contracts <--> Server
-  Loop --> Tools
-  Loop -->|node system prompt| Model[Claude streaming · or deterministic mock]
+  Loop -->|"query = original question"| Tools
+  Loop -->|"system = node prompt, user = question + upstream"| Model["Claude streaming, or deterministic mock"]
 ```
 
-Per run, the loop walks the workflow in dependency order and streams each node's reasoning to the canvas:
+For each node, in dependency order:
 
 ```
-topological order ─▶ per node: build prompt ─▶ retrieve 1-hop subgraph ─▶ stream reasoning + citations
+upstream = outputs of the nodes wired into this one (joined, in edge order)
+knowledge / tool node -> search the graph with the original question, emit tool_call + tool_result
+agent node            -> system: the node's prompt; user: "Question: <question> Context: <upstream>"
+output node           -> pass its upstream through
 ```
 
-## Run it
+### Scope
+
+The runner is deliberately small, and this is exactly what it does:
+
+- **Single topological pass.** Nodes are ordered with Kahn's algorithm and each runs once. The run's output is the output of the last node in that order.
+- **Per-edge context.** A node receives the original question and the outputs of its direct predecessors only. A node with no incoming edges receives just the question. Retrieval nodes always query with the original question.
+- **Cycles are tolerated, not detected.** A cyclic graph is not rejected. Nodes left in a cycle are appended in declaration order, so every node still runs exactly once and the run cannot hang. A predecessor that has not run yet contributes nothing.
+
+It does **not** do conditional branching, parallel fan-out, retries, timeouts, checkpoint and resume, or human approval gates. Nodes with several inputs are joined by concatenation, not by a merge policy. `tool` and `knowledge` nodes both call the same knowledge-graph tool. The investment went into the canvas, the typed event contract and the in-order SSE transport.
+
+## Results
+
+What the repo can show today, all reproducible locally:
+
+- **Recorded mock run: [`docs/mock-run.sse`](docs/mock-run.sse).** The raw SSE stream from `POST /api/run` for the starter workflow (knowledge graph, reasoner, answer) with no API key: 14 events, from `run_started` through `tool_call` and `tool_result` (4 citations, two of them one-hop neighbours) to `run_completed`. The mock's "thoughts" are scripted, not model output.
+- **14 Vitest tests in 2 files**, all passing locally (CI runs them on every push):
+  - `server/src/agent/agent.test.ts` (10): topological order and the cycle fallback, SSE delta parsing (`parseDelta`: content deltas, `[DONE]`, other event types, malformed JSON), and graph retrieval (keyword seed first, one-hop expansion, neighbours scored below seeds, never empty, undirected traversal).
+  - `server/src/agent/runWorkflow.test.ts` (4): with the Anthropic API stubbed at `fetch`, the agent after a retrieval node is sent both the question and the snippets; an agent with no incoming edge gets the question and none of the snippets; retrieval downstream of an agent still queries with the question; and a mock-mode run emits the full event sequence.
+
+The first three `runWorkflow` tests were written before the fix and failed against the previous runner, which overwrote one rolling context string at every node. The retrieval step replaced the question with its snippets, so with a real key the agent was told to answer a question it never received.
+
+## Getting started
+
+Requires Node.js 20 or newer (CI uses 20).
 
 ```bash
-npm install            # installs web + server workspaces
-cp .env.example .env   # optional — add ANTHROPIC_API_KEY for the live agent
+npm install            # installs the web and server workspaces
+cp .env.example .env   # optional: set ANTHROPIC_API_KEY to swap the mock for Claude
 npm run dev            # web on :5173, server on :8787 (Vite proxies /api)
 ```
 
-Open http://localhost:5173, edit the question in the toolbar, and hit **Run workflow**.
+Open http://localhost:5173, edit the question in the toolbar, and press **Run workflow**. `GET /api/health` reports `"mode": "mock"` or `"live"`.
 
-```bash
-npm run build          # type-check + build both workspaces
-npm run typecheck      # strict type-check only
-```
+| Script              | What it does                                        |
+| ------------------- | --------------------------------------------------- |
+| `npm run dev`       | Web on `:5173` and server on `:8787` (concurrently) |
+| `npm run build`     | Type-check and build the server, then the web app   |
+| `npm run typecheck` | Strict type-check of both workspaces, no emit       |
+| `npm test`          | Vitest suite (`server/src/agent`)                   |
 
-## Layout
+CI (`.github/workflows/ci.yml`) runs install, type-check, test and build on every push.
+
+## Project structure
 
 ```
 agentcanvas/
-├─ server/                 # Node.js + TypeScript agent backend
+├─ server/                      # Node.js + TypeScript agent backend
 │  └─ src/
-│     ├─ index.ts          # Hono app + /api/run SSE endpoint
+│     ├─ index.ts               # Hono app: /api/health, /api/run (SSE)
 │     └─ agent/
-│        ├─ schema.ts      # Zod schema contracts (source of truth)
-│        ├─ tools.ts       # knowledge-graph retrieval tool
-│        └─ loop.ts        # topological run loop + Claude streaming / mock
-└─ web/                    # Vue 3 + VueFlow studio
-   └─ src/
-      ├─ components/        # Canvas, NodePalette, Toolbar, Inspector, RunPanel, nodes/BaseNode
-      ├─ stores/workflow.ts # Pinia: graph state + selection + run orchestration
-      ├─ lib/               # SSE client + node catalog
-      └─ types/workflow.ts  # client mirror of the schema contracts
+│        ├─ schema.ts           # Zod contracts (source of truth)
+│        ├─ tools.ts            # demo knowledge graph + seed/1-hop retrieval
+│        ├─ loop.ts             # topological runner, per-edge context, Claude streaming / mock
+│        ├─ agent.test.ts       # order, SSE parsing, retrieval
+│        └─ runWorkflow.test.ts # what each node is sent, end to end
+├─ web/                         # Vue 3 + VueFlow studio
+│  └─ src/
+│     ├─ components/            # Canvas, NodePalette, Toolbar, Inspector, RunPanel, nodes/BaseNode
+│     ├─ stores/workflow.ts     # Pinia: graph, selection, run orchestration
+│     ├─ lib/                   # SSE client, node catalog
+│     └─ types/workflow.ts      # client mirror of the contracts
+└─ docs/                        # WHY.md, screenshot, recorded mock run
 ```
 
-## Scripts
+## Limitations
 
-| Script              | What it does                                       |
-| ------------------- | -------------------------------------------------- |
-| `npm run dev`       | Web on `:5173` + server on `:8787` (concurrently)  |
-| `npm run build`     | Type-check + build the server, then the web bundle |
-| `npm run typecheck` | Strict type-check both workspaces, no emit         |
-| `npm test`          | Vitest unit suite (`server/src/agent`)             |
+- The knowledge graph is 4 hard-coded nodes and 4 edges, matched by keyword. It shows the shape of graph retrieval, not its quality, and there is no retrieval benchmark.
+- Mock mode is scripted and does not read its context the way a model does. The live Claude path is covered by a stubbed-`fetch` test, not by a recorded run against the real API.
+- Workflows are not persisted. Reloading the page resets the canvas to the starter graph.
+- No hosted deployment. The server's CORS default is the local Vite origin.
+- The web UI has no automated tests; the suite covers the server.
 
-## Quality gates
+## Roadmap
 
-- **10 Vitest unit tests** covering the parts most likely to break silently:
-  topological execution order (including cycle safety), SSE delta parsing
-  (`parseDelta` — partial frames, `[DONE]`, malformed JSON), and knowledge-graph
-  retrieval (keyword seed, one-hop expansion, neighbour scoring, never-empty).
-- **TypeScript strict** across both workspaces.
-- **GitHub Actions CI** runs type-check → test → build on every push.
+- A keyless public deployment of the web app and the mock server.
+- Reject or highlight cycles on the canvas instead of silently running them once.
+- A recorded live run (with its cost) alongside the mock run.
+- Component tests for the Pinia store's event handling.
 
 ## License
 
-[MIT](LICENSE) © Pyae Sone (Seon) — [github.com/soneeee22000](https://github.com/soneeee22000)
+[MIT](LICENSE)
+
+## Author
+
+Pyae Sone (Seon) · [github.com/soneeee22000](https://github.com/soneeee22000)

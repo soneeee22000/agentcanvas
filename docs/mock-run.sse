@@ -1,0 +1,42 @@
+event: run_started
+data: {"type":"run_started","runId":"22e63d5f-8da5-4739-b9e4-9728a5342796"}
+
+event: node_started
+data: {"type":"node_started","nodeId":"knowledge-1"}
+
+event: tool_call
+data: {"type":"tool_call","nodeId":"knowledge-1","tool":"knowledge_graph_search","args":{"query":"Explain how GraphRAG makes an agent’s reasoning transparent."}}
+
+event: tool_result
+data: {"type":"tool_result","nodeId":"knowledge-1","tool":"knowledge_graph_search","citations":[{"source":"graphrag-overview.md#entities","snippet":"GraphRAG builds an entity-and-relationship knowledge graph from a corpus, then retrieves connected subgraphs instead of isolated chunks.","score":0.3333333333333333},{"source":"agentic-workflows.md#orchestration","snippet":"An agentic workflow decomposes a goal into nodes — agents, tools, and retrieval steps — wired so each step hands typed output to the next.","score":0.3333333333333333},{"source":"citations.md#grounding (1-hop: grounds)","snippet":"Grounding every claim with a source and a confidence score lets a human audit why the model answered the way it did.","score":0.16666666666666666},{"source":"schema-contracts.md#events (1-hop: emits events through)","snippet":"A discriminated-union event stream is the contract that lets the agent narrate its reasoning to the UI one typed step at a time.","score":0.16666666666666666}]}
+
+event: node_completed
+data: {"type":"node_completed","nodeId":"knowledge-1","output":"(graphrag-overview.md#entities) GraphRAG builds an entity-and-relationship knowledge graph from a corpus, then retrieves connected subgraphs instead of isolated chunks.\n(agentic-workflows.md#orchestration) An agentic workflow decomposes a goal into nodes — agents, tools, and retrieval steps — wired so each step hands typed output to the next.\n(citations.md#grounding (1-hop: grounds)) Grounding every claim with a source and a confidence score lets a human audit why the model answered the way it did.\n(schema-contracts.md#events (1-hop: emits events through)) A discriminated-union event stream is the contract that lets the agent narrate its reasoning to the UI one typed step at a time."}
+
+event: node_started
+data: {"type":"node_started","nodeId":"agent-1"}
+
+event: thought
+data: {"type":"thought","nodeId":"agent-1","text":"Reading upstream context for \"Reasoner\"."}
+
+event: thought
+data: {"type":"thought","nodeId":"agent-1","text":"Following its system prompt: \"Answer the question using only the retrieved snippets, and cite them.\""}
+
+event: thought
+data: {"type":"thought","nodeId":"agent-1","text":"Drafting a grounded response from the upstream snippets."}
+
+event: node_completed
+data: {"type":"node_completed","nodeId":"agent-1","output":"Synthesised answer for \"Reasoner\" grounded in the knowledge-graph snippets above."}
+
+event: node_started
+data: {"type":"node_started","nodeId":"output-1"}
+
+event: thought
+data: {"type":"thought","nodeId":"output-1","text":"Formatting the final answer for the user."}
+
+event: node_completed
+data: {"type":"node_completed","nodeId":"output-1","output":"Synthesised answer for \"Reasoner\" grounded in the knowledge-graph snippets above."}
+
+event: run_completed
+data: {"type":"run_completed","runId":"22e63d5f-8da5-4739-b9e4-9728a5342796","output":"Synthesised answer for \"Reasoner\" grounded in the knowledge-graph snippets above."}
+
