@@ -37,7 +37,7 @@ flowchart LR
   subgraph Web["web: Vue 3 + VueFlow + Pinia"]
     Palette["Node palette"] --> Canvas["Workflow canvas"]
     Canvas --> Inspector["Inspector: label, system prompt"]
-    RunBtn["Run panel"] --> Trace["Live reasoning + citations"]
+    RunBtn["Run panel"] --> Trace["Run trace: reasoning, tool calls, citations"]
   end
 
   subgraph Contracts["server/src/agent/schema.ts (Zod)"]

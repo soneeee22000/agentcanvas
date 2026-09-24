@@ -16,7 +16,7 @@ const { trace, finalOutput, errorMessage, status } = storeToRefs(store);
 
     <div class="flex-1 space-y-3 overflow-y-auto p-4">
       <p v-if="status === 'idle' && trace.length === 0" class="text-sm text-muted">
-        Run the workflow to watch each node think — every step is grounded with citations.
+        Run the workflow to watch each node think — retrieval steps show their citations.
       </p>
 
       <article

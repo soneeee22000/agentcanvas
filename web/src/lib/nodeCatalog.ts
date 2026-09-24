@@ -28,7 +28,7 @@ export const NODE_CATALOG: Record<NodeKind, NodeKindMeta> = {
   tool: {
     kind: "tool",
     label: "Tool",
-    description: "Calls an external function and returns its result.",
+    description: "Calls a tool (in this demo, the knowledge-graph search).",
     icon: Wrench,
     accent: "tool",
   },
