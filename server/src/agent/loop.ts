@@ -15,7 +15,8 @@ const sleep = (ms: number): Promise<void> =>
 
 /**
  * Order nodes so every node runs after the nodes feeding into it (Kahn's algorithm).
- * Falls back to declaration order for any nodes left in a cycle.
+ * Cycles are not rejected: nodes left in a cycle are appended in declaration
+ * order, so every node still runs exactly once and the loop cannot hang.
  */
 export function topoOrder(graph: WorkflowGraph): WorkflowNode[] {
   const indegree = new Map<string, number>(
@@ -48,8 +49,8 @@ export function topoOrder(graph: WorkflowGraph): WorkflowNode[] {
 /**
  * Stream a real Claude completion, forwarding text deltas to `onDelta`.
  * The node's prompt is sent as the Anthropic `system` instruction (so editing
- * it in the inspector genuinely steers the model), with the upstream context as
- * the user turn.
+ * it in the inspector genuinely steers the model), with the question and the
+ * node's upstream context as the user turn.
  */
 async function streamClaude(
   system: string,
@@ -113,10 +114,27 @@ export function parseDelta(line: string): string | null {
   }
 }
 
+/**
+ * What a node receives: the run's original question plus the outputs of the
+ * nodes wired directly into it (empty when it has no incoming edges).
+ */
+export interface NodeInput {
+  readonly question: string;
+  readonly upstream: string;
+}
+
+const UPSTREAM_SEPARATOR = "\n\n";
+
+/** Compose the user turn for an agent: the question first, then its upstream context. */
+export function agentUserContent(input: NodeInput): string {
+  const context = input.upstream || "(no upstream context)";
+  return `Question:\n${input.question}\n\nContext:\n${context}`;
+}
+
 /** Deterministic stand-in for the LLM so the studio runs with no key and no cost. */
 async function mockReason(
   node: WorkflowNode,
-  context: string,
+  input: NodeInput,
   emit: Emit,
 ): Promise<string> {
   const instruction = node.config.prompt?.trim();
@@ -124,44 +142,49 @@ async function mockReason(
     `Reading upstream context for "${node.label}".`,
     instruction
       ? `Following its system prompt: "${instruction.slice(0, 80)}"`
-      : `Planning how to answer: ${context.slice(0, 80)}`,
-    "Drafting a grounded response from the retrieved snippets.",
+      : `Planning how to answer: ${input.question.slice(0, 80)}`,
+    input.upstream
+      ? "Drafting a grounded response from the upstream snippets."
+      : "No upstream snippets are wired in, so answering from the question alone.",
   ];
   for (const text of lines) {
     emit({ type: "thought", nodeId: node.id, text });
     await sleep(STEP_DELAY_MS);
   }
-  return `Synthesised answer for "${node.label}" grounded in the knowledge-graph snippets above.`;
+  return input.upstream
+    ? `Synthesised answer for "${node.label}" grounded in the knowledge-graph snippets above.`
+    : `Synthesised answer for "${node.label}" from the question alone (no snippets wired in).`;
 }
 
 /** Run an agent node: think, optionally via a real LLM, and return its output text. */
 async function runAgentNode(
   node: WorkflowNode,
-  context: string,
+  input: NodeInput,
   emit: Emit,
 ): Promise<string> {
-  if (!process.env.ANTHROPIC_API_KEY) return mockReason(node, context, emit);
+  if (!process.env.ANTHROPIC_API_KEY) return mockReason(node, input, emit);
   const system =
     node.config.prompt?.trim() || "You are a step in an agentic workflow.";
-  return streamClaude(system, `Context:\n${context}`, (delta) =>
+  return streamClaude(system, agentUserContent(input), (delta) =>
     emit({ type: "thought", nodeId: node.id, text: delta }),
   );
 }
 
-/** Run a retrieval node: call the knowledge-graph tool and emit grounded citations. */
+/** Run a retrieval node: query the knowledge graph with the question and emit citations. */
 async function runRetrievalNode(
   node: WorkflowNode,
-  context: string,
+  input: NodeInput,
   emit: Emit,
 ): Promise<string> {
+  const query = input.question;
   emit({
     type: "tool_call",
     nodeId: node.id,
     tool: knowledgeGraphTool.name,
-    args: { query: context },
+    args: { query },
   });
   await sleep(STEP_DELAY_MS);
-  const citations = await knowledgeGraphTool.run(context);
+  const citations = await knowledgeGraphTool.run(query);
   emit({
     type: "tool_result",
     nodeId: node.id,
@@ -173,47 +196,68 @@ async function runRetrievalNode(
     .join("\n");
 }
 
-/** Dispatch a single node by kind and return the context handed to its successors. */
+/** Dispatch a single node by kind and return the output handed along its outgoing edges. */
 async function runNode(
   node: WorkflowNode,
-  context: string,
+  input: NodeInput,
   emit: Emit,
 ): Promise<string> {
   switch (node.kind) {
     case "knowledge":
     case "tool":
-      return runRetrievalNode(node, context, emit);
+      return runRetrievalNode(node, input, emit);
     case "agent":
-      return runAgentNode(node, context, emit);
+      return runAgentNode(node, input, emit);
     case "output":
       emit({
         type: "thought",
         nodeId: node.id,
         text: "Formatting the final answer for the user.",
       });
-      return context;
+      return input.upstream || input.question;
     default:
-      return context;
+      return input.upstream;
   }
 }
 
 /**
- * Execute a workflow graph, streaming reasoning and citations as typed RunEvents.
+ * Gather the outputs of the nodes wired into `nodeId`, in edge declaration order.
+ * Predecessors that have not run yet (only possible inside a cycle) contribute nothing.
+ */
+export function upstreamFor(
+  nodeId: string,
+  graph: WorkflowGraph,
+  outputs: ReadonlyMap<string, string>,
+): string {
+  return graph.edges
+    .filter((edge) => edge.target === nodeId)
+    .map((edge) => outputs.get(edge.source))
+    .filter((output): output is string => Boolean(output))
+    .join(UPSTREAM_SEPARATOR);
+}
+
+/**
+ * Execute a workflow graph in one topological pass, streaming reasoning and
+ * citations as typed RunEvents. Every node gets the original question plus the
+ * outputs of its direct predecessors; the run's output is the last node's output.
  * The caller supplies `emit`; this function never touches the transport.
  */
 export async function runWorkflow(
   graph: WorkflowGraph,
-  input: string,
+  question: string,
   emit: Emit,
 ): Promise<void> {
   const runId = randomUUID();
   emit({ type: "run_started", runId });
-  let context = input;
+  const outputs = new Map<string, string>();
+  let finalOutput = question;
   for (const node of topoOrder(graph)) {
     emit({ type: "node_started", nodeId: node.id });
     await sleep(STEP_DELAY_MS);
-    context = await runNode(node, context, emit);
-    emit({ type: "node_completed", nodeId: node.id, output: context });
+    const upstream = upstreamFor(node.id, graph, outputs);
+    finalOutput = await runNode(node, { question, upstream }, emit);
+    outputs.set(node.id, finalOutput);
+    emit({ type: "node_completed", nodeId: node.id, output: finalOutput });
   }
-  emit({ type: "run_completed", runId, output: context });
+  emit({ type: "run_completed", runId, output: finalOutput });
 }
