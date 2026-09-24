@@ -18,9 +18,11 @@ Both functions export the same app from `server/src/app.ts` (`createApp()`). The
 
 The values are in `server/src/guards.ts` (`DEFAULT_LIMITS`, `DEFAULT_RATE_LIMIT`, `DEFAULT_RATE_WINDOW_MS`). `GET /api/health` reports the mode and the active limits. Tests: `server/src/guards.test.ts` and `server/src/app.test.ts`.
 
-**Limitation of the rate limit.** It is an in-memory fixed window. On Vercel it holds per function instance: a new instance starts with an empty count, so the limit is not global. It still caps a single client hammering one warm instance. A global limit would need a shared store (for example Upstash Redis), which this deploy does not use. The client IP comes from `x-real-ip`, then the first `x-forwarded-for` hop. Vercel sets both headers.
+**Limitation of the rate limit.** It is an in-memory fixed window. On Vercel it holds per function instance: a new instance starts with an empty count, so the limit is not global. It still caps a single client hammering one warm instance. A global limit would need a shared store (for example Upstash Redis), which this deploy does not use. The client IP comes from `x-real-ip`, then the first `x-forwarded-for` hop. Vercel sets both headers. The local Node server (`server/src/index.ts`) has no proxy in front of it, so there a client can set these headers itself and pick its own rate-limit key.
 
 Worst case at these limits: a chain of 12 agent nodes in mock mode took 15.7 s end to end in the local check below. `api/run.ts` has `maxDuration: 60` in `vercel.json`.
+
+**Response size.** Output and pass-through nodes forward their upstream text, so a graph can make the response larger than the request. Before 2026-09-24 a predecessor wired in by several edges was counted once per edge: 9 nodes chained with 3 duplicate edges per hop (24 edges, a 1,556-byte request) streamed an 8,909,561-byte response. `upstreamFor` in `server/src/agent/loop.ts` now counts each predecessor once, and the same request streams 8,705 bytes. Fan-in over distinct edges still adds up: the largest case measured, 12 nodes each fed by the two nodes before it plus 3 extra edges into the last node (24 edges, a 1,690-byte request), streamed 290,729 bytes in 4.3 s. There is no cap on response size beyond what the node and edge caps imply.
 
 ## Files
 

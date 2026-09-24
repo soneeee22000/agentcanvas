@@ -222,6 +222,8 @@ async function runNode(
 
 /**
  * Gather the outputs of the nodes wired into `nodeId`, in edge declaration order.
+ * A predecessor wired in by several edges contributes once, so duplicate edges
+ * cannot multiply the context along a chain of pass-through nodes.
  * Predecessors that have not run yet (only possible inside a cycle) contribute nothing.
  */
 export function upstreamFor(
@@ -229,9 +231,13 @@ export function upstreamFor(
   graph: WorkflowGraph,
   outputs: ReadonlyMap<string, string>,
 ): string {
-  return graph.edges
-    .filter((edge) => edge.target === nodeId)
-    .map((edge) => outputs.get(edge.source))
+  const sources = new Set(
+    graph.edges
+      .filter((edge) => edge.target === nodeId)
+      .map((edge) => edge.source),
+  );
+  return [...sources]
+    .map((source) => outputs.get(source))
     .filter((output): output is string => Boolean(output))
     .join(UPSTREAM_SEPARATOR);
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runWorkflow } from "./loop.js";
+import { runWorkflow, upstreamFor } from "./loop.js";
 import type { RunEvent, WorkflowGraph, WorkflowNode } from "./schema.js";
 
 const QUESTION = "How does GraphRAG ground an agent's answer?";
@@ -134,6 +134,54 @@ describe("runWorkflow in mock mode", () => {
     expect(last?.type).toBe("run_completed");
     expect(last?.type === "run_completed" ? last.output : "").toBe(
       agentDone?.type === "node_completed" ? agentDone.output : "missing",
+    );
+  });
+});
+
+describe("upstreamFor", () => {
+  it("counts a predecessor once even when several edges wire it to the same node", () => {
+    const graph: WorkflowGraph = {
+      nodes: [node("a", "knowledge"), node("b", "output")],
+      edges: [
+        { id: "e1", source: "a", target: "b" },
+        { id: "e2", source: "a", target: "b" },
+        { id: "e3", source: "a", target: "b" },
+      ],
+    };
+    const outputs = new Map([["a", "snippets"]]);
+    expect(upstreamFor("b", graph, outputs)).toBe("snippets");
+  });
+});
+
+describe("runWorkflow output size", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it("does not multiply the output when duplicate edges chain pass-through nodes", async () => {
+    const duplicated = (source: string, target: string) =>
+      [1, 2, 3].map((copy) => ({
+        id: `${source}-${target}-${copy}`,
+        source,
+        target,
+      }));
+    const graph: WorkflowGraph = {
+      nodes: [node("k", "knowledge"), node("o1", "output"), node("o2", "output")],
+      edges: [...duplicated("k", "o1"), ...duplicated("o1", "o2")],
+    };
+    const events = await collectRun(graph);
+    const retrieval = events.find(
+      (event) => event.type === "node_completed" && event.nodeId === "k",
+    );
+    const last = events.at(-1);
+    expect(last?.type === "run_completed" ? last.output : "").toBe(
+      retrieval?.type === "node_completed" ? retrieval.output : "missing",
     );
   });
 });

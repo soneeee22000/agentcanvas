@@ -79,9 +79,9 @@ It does **not** do conditional branching, parallel fan-out, retries, timeouts, c
 What the repo can show today, all reproducible locally:
 
 - **Recorded mock run: [`docs/mock-run.sse`](docs/mock-run.sse).** The raw SSE stream from `POST /api/run` for the starter workflow (knowledge graph, reasoner, answer) with no API key: 14 events, from `run_started` through `tool_call` and `tool_result` (4 citations, two of them one-hop neighbours) to `run_completed`. The mock's "thoughts" are scripted, not model output.
-- **32 Vitest tests in 4 files**, all passing locally (CI runs them on every push):
+- **34 Vitest tests in 4 files**, all passing locally (CI runs them on every push):
   - `server/src/agent/agent.test.ts` (10): topological order and the cycle fallback, SSE delta parsing (`parseDelta`: content deltas, `[DONE]`, other event types, malformed JSON), and graph retrieval (keyword seed first, one-hop expansion, neighbours scored below seeds, never empty, undirected traversal).
-  - `server/src/agent/runWorkflow.test.ts` (4): with the Anthropic API stubbed at `fetch`, the agent after a retrieval node is sent both the question and the snippets; an agent with no incoming edge gets the question and none of the snippets; retrieval downstream of an agent still queries with the question; and a mock-mode run emits the full event sequence.
+  - `server/src/agent/runWorkflow.test.ts` (6): with the Anthropic API stubbed at `fetch`, the agent after a retrieval node is sent both the question and the snippets; an agent with no incoming edge gets the question and none of the snippets; retrieval downstream of an agent still queries with the question; a mock-mode run emits the full event sequence; and a predecessor wired in by duplicate edges is counted once, so duplicate edges cannot multiply the output along a chain.
   - `server/src/guards.test.ts` (11): the per-IP fixed-window rate limiter (limit, retry delay, separate clients, window reset, eviction), client IP extraction, and the node, edge and question caps.
   - `server/src/app.test.ts` (7): through the HTTP app, a mock run streams SSE from `run_started` to `run_completed`; oversized bodies get 413, oversized graphs 422, malformed requests 400; the rate limit returns 429 with `Retry-After` per IP; the health check is not rate-limited.
 
