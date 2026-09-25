@@ -14,7 +14,7 @@ A Vue 3 + VueFlow studio for composing agentic workflows on a canvas and watchin
 
 [Why this exists](docs/WHY.md) · [Recorded mock run](docs/mock-run.sse) · [Run it locally](#getting-started)
 
-There is no hosted demo yet. A keyless Vercel deploy is prepared and checked locally ([docs/DEPLOY.md](docs/DEPLOY.md)) but not published. The app runs locally with no API key: a deterministic mock stands in for the model. The screenshot shows the canvas before a run, and the recorded run comes from mock mode, not from Claude.
+**[Live demo (mock mode)](https://agentcanvas-demo.vercel.app)**: the hosted app runs keyless, so a deterministic mock stands in for the model and no Claude call is made. It is deployed as described in [docs/DEPLOY.md](docs/DEPLOY.md), with per-IP rate limits and graph-size caps. The app also runs locally with no API key. The screenshot shows the canvas before a run, and the recorded run comes from mock mode, not from Claude.
 
 ## Why this exists
 
